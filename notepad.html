@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notepad++</title>
+  <style>
+    :root{--bg:#fff;--fg:#111;--muted:#666;--accent:#2563eb}
+    [data-theme="dark"]{--bg:#0b1220;--fg:#e6eef8;--muted:#9fb0d6;--accent:#60a5fa}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter, system-ui, sans-serif;background:var(--bg);color:var(--fg);height:100vh;display:flex;flex-direction:column}
+    header{display:flex;gap:.5rem;align-items:center;padding:.6rem;border-bottom:1px solid rgba(0,0,0,.06);background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+    header .title{font-weight:700;font-size:1rem}
+    header .controls{margin-left:auto;display:flex;gap:.4rem;align-items:center}
+    button,select,input[type=range]{background:transparent;border:1px solid rgba(0,0,0,.08);padding:.45rem .6rem;border-radius:8px;color:var(--fg);cursor:pointer}
+    [data-theme="dark"] button{border-color:rgba(255,255,255,.06)}
+    main{flex:1;display:flex;gap:1rem;padding:1rem}
+    .editor-wrap{flex:1;display:flex;flex-direction:column}
+    textarea#note{flex:1;width:100%;resize:none;padding:1rem;border-radius:12px;border:1px solid rgba(0,0,0,.06);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;font-size:1rem;line-height:1.5}
+    .sidebar{width:260px;min-width:180px;border-left:1px dashed rgba(0,0,0,.04);padding:0 1rem}
+    .sidebar h3{margin:0 0 .5rem 0}
+    .meta{display:flex;gap:.5rem;align-items:center;margin-bottom:.6rem}
+    .muted{color:var(--muted);font-size:.9rem}
+    .small{font-size:.85rem}
+    footer{padding:.6rem;border-top:1px solid rgba(0,0,0,.04);display:flex;gap:1rem;align-items:center}
+    .badge{background:rgba(0,0,0,.04);padding:.25rem .5rem;border-radius:6px;font-size:.85rem}
+    .danger{background:#fde68a}
+    input[type=file]{display:none}
+    @media(max-width:800px){.sidebar{display:none}.title{font-size:.95rem}header{gap:.3rem}}
+  </style>
+</head>
+<body data-theme="light">
+  <header>
+    <div class="title">Notepad+  Made By Emon</div>
+    <div class="controls">
+      <button id="newBtn" title="Ctrl+N">নতুন</button>
+      <button id="openBtn" title="Ctrl+O">ফাইল খুলুন</button>
+      <input type="file" id="fileInput" accept="text/*">
+      <button id="saveBtn" title="Ctrl+S">সেভ (.txt)</button>
+      <button id="downloadBtn">ডাউনলোড</button>
+      <button id="findBtn" title="Ctrl+F">Find</button>
+      <label class="small muted">Autosave <input id="autosave" type="checkbox" checked></label>
+      <select id="fontSize" title="Font size">
+        <option value="14">14px</option>
+        <option value="16" selected>16px</option>
+        <option value="18">18px</option>
+        <option value="20">20px</option>
+      </select>
+      <button id="themeBtn">Dark</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="editor-wrap">
+      <textarea id="note" placeholder="এখানে লেখা শুরু করুন..." spellcheck="true"></textarea>
+      <footer>
+        <div class="badge" id="words">Words: 0</div>
+        <div class="badge" id="chars">Chars: 0</div>
+        <div class="muted small" id="status">Autosaved — never</div>
+      </footer>
+    </div>
+
+    <aside class="sidebar">
+      <h3>বৈশিষ্ট্য</h3>
+      <p class="muted small">Simple local notepad — saves to browser (localStorage). Download or open .txt files. Shortcuts: <b>Ctrl/Cmd + S</b> (save), <b>Ctrl/Cmd + N</b> (new), <b>Ctrl/Cmd + O</b> (open), <b>Ctrl/Cmd + F</b> (find).</p>
+      <hr>
+      <h3>Quick actions</h3>
+      <div class="meta"><button id="clearBtn">মুছুন</button></div>
+      <div style="margin-top:.6rem"><button id="exportPdf">Export as PDF (print)</button></div>
+      <hr>
+      <h3>Find</h3>
+      <input id="findInput" placeholder="সার্চ শব্দ লিখুন" class="small" />
+      <div style="margin-top:.5rem"><button id="prevFind">Prev</button><button id="nextFind">Next</button></div>
+      <hr>
+      <h3>Examples</h3>
+      <button id="template1">Meeting notes</button>
+      <button id="template2">To‑do</button>
+    </aside>
+  </main>
+
+  <script>
+    // Simple Notepad JS — single file
+    const note = document.getElementById('note');
+    const saveBtn = document.getElementById('saveBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const newBtn = document.getElementById('newBtn');
+    const openBtn = document.getElementById('openBtn');
+    const fileInput = document.getElementById('fileInput');
+    const autosaveEl = document.getElementById('autosave');
+    const status = document.getElementById('status');
+    const words = document.getElementById('words');
+    const chars = document.getElementById('chars');
+    const themeBtn = document.getElementById('themeBtn');
+    const fontSize = document.getElementById('fontSize');
+    const clearBtn = document.getElementById('clearBtn');
+    const exportPdf = document.getElementById('exportPdf');
+    const findInput = document.getElementById('findInput');
+    const prevFind = document.getElementById('prevFind');
+    const nextFind = document.getElementById('nextFind');
+    const findBtn = document.getElementById('findBtn');
+
+    const STORAGE_KEY = 'simple_notepad_v1';
+    let lastSaved = null;
+    let findMatches = [];
+    let currentFindIndex = -1;
+
+    // load
+    function load() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) note.value = raw;
+      updateStats();
+      setStatus('loaded');
+    }
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, note.value);
+      lastSaved = new Date();
+      setStatus('Autosaved at ' + lastSaved.toLocaleTimeString());
+    }
+
+    function setStatus(txt){
+      status.textContent = txt;
+    }
+
+    function updateStats(){
+      const text = note.value || '';
+      const c = text.length;
+      const w = text.trim() ? text.trim().split(/\s+/).length : 0;
+      words.textContent = 'Words: ' + w;
+      chars.textContent = 'Chars: ' + c;
+    }
+
+    // download as .txt
+    function download(filename = 'note.txt'){
+      const blob = new Blob([note.value || ''], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      setStatus('Downloaded ' + filename);
+    }
+
+    // open file
+    fileInput.addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = evt => { note.value = evt.target.result; updateStats(); setStatus('File loaded: '+f.name); };
+      reader.readAsText(f);
+      fileInput.value = '';
+    });
+
+    openBtn.addEventListener('click', ()=> fileInput.click());
+    saveBtn.addEventListener('click', ()=> { download('note.txt'); save(); });
+    downloadBtn.addEventListener('click', ()=> download());
+    newBtn.addEventListener('click', ()=> { if(confirm('নতুন নোট? বর্তমান কনটেন্ট মুছে যাবে।')) { note.value=''; save(); updateStats(); } });
+    clearBtn.addEventListener('click', ()=> { if(confirm('মুছতে চান?')) { note.value=''; updateStats(); save(); } });
+    exportPdf.addEventListener('click', ()=> { window.print(); });
+
+    // templates
+    document.getElementById('template1').addEventListener('click', ()=>{
+      note.value = `Meeting Notes\nDate: ${new Date().toLocaleDateString()}\nAttendees:\n- \n\nAgenda:\n- \n\nNotes:\n- `; updateStats(); if(autosaveEl.checked) save();
+    });
+    document.getElementById('template2').addEventListener('click', ()=>{
+      note.value = `To‑Do:\n- [ ] `; updateStats(); if(autosaveEl.checked) save();
+    });
+
+    // autosave
+    note.addEventListener('input', ()=>{ updateStats(); if(autosaveEl.checked) debounceSave(); });
+    let saveTimeout = null;
+    function debounceSave(){ clearTimeout(saveTimeout); saveTimeout = setTimeout(()=> save(), 700); }
+
+    // theme and font
+    themeBtn.addEventListener('click', ()=>{
+      const root = document.documentElement;
+      const current = document.body.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+      themeBtn.textContent = next === 'light' ? 'Dark' : 'Light';
+      localStorage.setItem('notepad_theme', next);
+    });
+    fontSize.addEventListener('change', ()=>{ note.style.fontSize = fontSize.value + 'px'; localStorage.setItem('notepad_font', fontSize.value); });
+
+    // find feature (simple)
+    function findAll(q){
+      findMatches = [];
+      currentFindIndex = -1;
+      if (!q) return;
+      const txt = note.value;
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      let m; while((m = regex.exec(txt))){ findMatches.push({start: m.index, end: m.index + m[0].length}); }
+    }
+    function highlightCurrentFind(){
+      if (findMatches.length===0) return;
+      const r = findMatches[currentFindIndex];
+      note.focus(); note.setSelectionRange(r.start, r.end);
+      setStatus(`Match ${currentFindIndex+1} of ${findMatches.length}`);
+    }
+    findInput.addEventListener('input', ()=>{ findAll(findInput.value); if(findMatches.length){ currentFindIndex=0; highlightCurrentFind(); } });
+    nextFind.addEventListener('click', ()=>{ if(!findMatches.length) return; currentFindIndex = (currentFindIndex+1)%findMatches.length; highlightCurrentFind(); });
+    prevFind.addEventListener('click', ()=>{ if(!findMatches.length) return; currentFindIndex = (currentFindIndex-1+findMatches.length)%findMatches.length; highlightCurrentFind(); });
+    findBtn.addEventListener('click', ()=>{ findInput.focus(); });
+
+    // keyboard shortcuts
+    window.addEventListener('keydown', e => {
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && e.key.toLowerCase() === 's'){
+        e.preventDefault(); download(); save();
+      }
+      if (meta && e.key.toLowerCase() === 'n'){
+        e.preventDefault(); if(confirm('নতুন নোট?')){ note.value=''; updateStats(); save(); }
+      }
+      if (meta && e.key.toLowerCase() === 'o'){
+        e.preventDefault(); fileInput.click();
+      }
+      if (meta && e.key.toLowerCase() === 'f'){
+        e.preventDefault(); findInput.focus();
+      }
+    });
+
+    // persist settings
+    window.addEventListener('load', ()=>{
+      const theme = localStorage.getItem('notepad_theme') || 'light';
+      document.body.setAttribute('data-theme', theme);
+      themeBtn.textContent = theme === 'light' ? 'Dark' : 'Light';
+      const fs = localStorage.getItem('notepad_font') || '16';
+      fontSize.value = fs; note.style.fontSize = fs + 'px';
+      load();
+    });
+
+    // quick save before unload
+    window.addEventListener('beforeunload', ()=>{ if(autosaveEl.checked) save(); });
+  </script>
+</body>
+</html>
